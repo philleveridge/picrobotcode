@@ -92,13 +92,32 @@ const unsigned char sound[] = {
 */
 
 
+
+/*
+
+  A1 A0 A7 A6 V+ B7 B6 B5 B4 
+  |  |  |  |  |  |  |  |  |
+ ---------------------------
+ |      PIC 16F648         |
+ -o-------------------------
+  |  |  |  |  |  |  |  |  |
+  A2 A3 A4 A5 G  B0 B1 B2 B3
+ 
+ 
+ B0-B7 A0-A1 Are connected to LED
+ A2 control inut
+ A6/7 Sound output
+ 
+*/
+ 
+
+
 unsigned char Msec;
 unsigned char s_mask;
 char *s_bytes, *s_bytes_;
 unsigned char c_byte;
 
-
-
+unsigned char  wlc;  //wave length in 0.5us i.e. 1Khz = 0.5us on, 0.5us off -> L=1ms => 1Khz
 
 static void isr(void) interrupt 0 { 
    /*
@@ -110,6 +129,22 @@ static void isr(void) interrupt 0 {
 
     T0IF = 0;               /* Clear timer interrupt flag */     
 	if (Msec >0) Msec--;
+	
+	PORTA ^= 0X80;  // 1khz
+
+	
+	if (wlc!=0)
+	{
+		if (wlc >0) 
+		{
+			wlc--;
+			if (wlc==0) 
+			{
+				// flip bit A6;
+				PORTA ^= 0X40; 
+			}
+		}
+	}
 	
 
 }
@@ -158,14 +193,10 @@ void init(void) {
 	Msec=0;
 }
 
-
-
-///////////////////////////////////////////////////////////////////////////////
-// cylon() - simulate cylon scanner
-///////////////////////////////////////////////////////////////////////////////
-
 // ------------------------------------------------
 // a simple delay function
+
+
 
 
 void delay(unsigned char ms)
@@ -177,9 +208,49 @@ void delay(unsigned char ms)
 	}  
 }
 
+void play_tone()
+{
+	// two tomes
+	// 2 sec of 500Hz (B above middle C)
+	int i;
+	
+	for (i=0; i<2000; i++) // 2 sec (1000 x 2 ms)
+	{
+		wlc=2;
+		while (wlc!=0) ;
+	}
+		
+	// 1 sec silence
+	
+	for (i=0; i<20; i++)  //  20 x 50ms = 1 sec
+	{
+		delay(50);
+	}
+	
+
+	// 2 sec of 330Hz (G above middle C)
+		
+	for (i=0; i<2000; i++) // 2 sec (1000 x 2 ms)
+	{
+		wlc=3;		
+		while (wlc!=0) ;
+	}	
+	
+	// 1 sec silence
+	
+	for (i=0; i<20; i++)  //  20 x 50ms = 1 sec
+	{
+		delay(50);
+	}
+	
+
+	// output on A4/A5 = PORTA = 0011 0000 
+}
+
 //__code __at (0x300) unsigned char sound_bytes_0[] = { 0xAA, 0xAA, 0xAA};
 //__code __at (0x310) unsigned char sound_bytes_1[] = { 0xCC, 0xCC, 0xCC};
 
+/*
 
 void play_sound(unsigned char sound_id, int ptime) {
 
@@ -230,14 +301,18 @@ unsigned char sound_bytes_1[] = { 0xCC, 0xCC, 0xCC};
 	}
 }
 
+*/
+
 
 void main(void) {
  
 	init();
 	
 	while (1) {	
-		play_sound(0, 500);
-		play_sound(1, 500);
+		//play_sound(0, 500);
+		//play_sound(1, 500);
+		
+		play_tone();
 	}
 
 }
