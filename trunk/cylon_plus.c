@@ -28,14 +28,32 @@ config at 0x2007 __CONFIG =
 
 ///////////////////////////////////////////////////////////////////////////////
 // init() - initialize everything
-///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
 static unsigned char Msec;
 static unsigned char Cnt;
 static unsigned char Mode;
 
+unsigned char s_mask;
+char *s_bytes, *s_bytes_;
+unsigned char c_byte;
+
+unsigned char  wlc;  //wave length in 0.5us i.e. 1Khz = 0.5us on, 0.5us off -> L=1ms => 1Khz
+unsigned char  wln;  //wave length in 0.5us i.e. 1Khz = 0.5us on, 0.5us off -> L=1ms => 1Khz
+
+
+// [t/10ms, f]
+unsigned char tune[] = {
+	100,2,25,0,100,3,25,0,0
+	};
+	
+unsigned char t;
+unsigned char t0;
+
+#define TMS 20;
+
 static void isr(void) interrupt 0 { 
-    
-    /*
+   /*
     Notice the use of 'interrupt 0' keyword in the function above.  This
     is how SDCC knows that this is the interrupt service routine.  We will
     only be using level '0' for PICs, therefore, you can use this same 
@@ -43,10 +61,49 @@ static void isr(void) interrupt 0 {
     */
 
     T0IF = 0;               /* Clear timer interrupt flag */     
-	
-	PORTA ^= 0x80;  		//Flip Bit very -0.5ms = 1kHz
-	
 	if (Msec >0) Msec--;
+	
+	PORTA ^= 0X80;  // 1khz
+	
+	if(t==1)
+	{
+		wln=tune[t-1];
+		wlc=tune[t];
+		t+=2;
+	}
+
+	if (t>0)
+	{
+		if (wlc!=0)
+		{
+			if (wlc >0) 
+			{
+				wlc--;
+				if (wlc==0) 
+				{
+					// flip bit A6;
+					PORTA ^= 0X40; 
+					
+					wln--;
+					if (wln==0)
+					{
+						wln=tune[t-1];	
+						if (wln != 0) 
+							wlc=tune[t];
+						t+=2;
+					}
+					else
+						wlc=tune[t-2];
+				}
+			}
+		}
+		else
+		{
+			if (wln>0) {
+				wln--;
+			}
+		}
+	}
 	
 	if ((PORTA & 0x04) != 0)   //RA2 (pin1)
 	{
@@ -68,7 +125,7 @@ static void isr(void) interrupt 0 {
 void init(void) {
 	/* PORTB.1 is an output pin */ 
 	TRISB = 0x00; 			// all outputs
-	TRISA = 0x34; 			// RA0/1 are outputs RA2 will be input, RA6/RA7 Drive piezo transducer
+	TRISA = 0x04; 			// RA0/1 are outputs RA2 will be input, RA6/RA7 Drive piezo transducer
 	
 	CMCON = 0x07;           /* disable comparators */
     T0CS = 0;               /* clear to enable timer mode */
@@ -106,7 +163,9 @@ void init(void) {
       
         
     TMR0 = 0;               /* clear the value in TMR0 */
- 
+	
+	t=0;
+
 }
 
 
@@ -124,14 +183,17 @@ void delay(unsigned char ms)
 	
 	while (Msec) 
 	{
-		PORTA ^= 0x40;  		//Flip Bit
-	}  		//Flip Bit
+	}  
 }
 
+void play_tone()
+{
+	t=1;
+}
 
 #define CYLON_SCAN_DELAY 20
 
-void cylon(unsigned char cylon_style) {
+void start() {
 
 	/* 10 bits */
 	const unsigned char cylon_bits_a[] = { 2,3,  1,  0,  0, 0, 0,0,0,0 };
@@ -146,6 +208,9 @@ void cylon(unsigned char cylon_style) {
 
 	while(1) {
 	
+		play_tone();
+
+	
 		while (Mode==0) // wait until mode set
 		{
 			PORTA = 0;
@@ -153,8 +218,10 @@ void cylon(unsigned char cylon_style) {
 			delay(CYLON_SCAN_DELAY);		
 		}
 		
+		play_tone();
+	
 
-		if(cylon_style == 0) {
+		if(Mode == 1) {
 
 			// traditional (back & forth) cylon scanner
 
@@ -176,7 +243,7 @@ void cylon(unsigned char cylon_style) {
 				delay(CYLON_SCAN_DELAY);
 			}
 
-		} else if(cylon_style == 1) {
+		} else if(Mode == 2) {
 
 			// single direction scan
 
@@ -187,7 +254,7 @@ void cylon(unsigned char cylon_style) {
 			}
 
 
-		} else if(cylon_style == 2) {
+		} else if(Mode == 3) {
 
 			// other direction scan
 
@@ -200,13 +267,71 @@ void cylon(unsigned char cylon_style) {
 	}
 }
 
- 
+
+
+//__code __at (0x300) unsigned char sound_bytes_0[] = { 0xAA, 0xAA, 0xAA};
+//__code __at (0x310) unsigned char sound_bytes_1[] = { 0xCC, 0xCC, 0xCC};
+
+/*
+
+void play_sound(unsigned char sound_id, int ptime) {
+
+unsigned char sound_bytes_0[] = { 0xAA, 0xAA, 0xAA};
+unsigned char sound_bytes_1[] = { 0xCC, 0xCC, 0xCC};
+
+		
+	// play sound from array
+	int sz;
+	char *sb;
+	
+	switch(sound_id) {
+	case 0:
+		sz = sizeof(sound_bytes_0);
+		sb = &sound_bytes_0[0];
+		break;
+	case 1:
+		sz = sizeof(sound_bytes_1);
+		sb = &sound_bytes_1[0];
+		break;
+	}
+	
+	s_mask=1;
+		
+	while (ptime-- > 0)
+	{
+		if (s_mask==0)
+		{
+			s_mask=1;
+			s_bytes++;
+			if ((s_bytes-sb) >= sz)
+				s_bytes=sb;
+		}
+		if ((s_mask & *s_bytes) != 0)
+		{
+			PORTA |= 0x80;  		//Bit 7 On
+			PORTA &= 0xBF;  		//Bit 6 Off
+		}
+		else
+		{
+			PORTA &= 0x7F;  		//Bit 7 Off
+			PORTA |= 0x40;  		//Bit 6 On
+		}
+
+		s_mask <<= 1;	
+		
+		delay(1);
+	}
+}
+
+*/
+
+
 void main(void) {
  
- init();
+	init();
+	
+	Mode=0;
+ 
+	start();
 
- Mode=0;
- 
- cylon(0);
- 
 }
