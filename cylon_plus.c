@@ -44,7 +44,7 @@ unsigned char  wln;  //wave length in 0.5us i.e. 1Khz = 0.5us on, 0.5us off -> L
 
 // [t/10ms, f]
 unsigned char tune[] = {
-	100,2,25,0,100,3,25,0,0
+	100,2,100,0,100,3,100,0,0
 	};
 	
 unsigned char t;
@@ -52,15 +52,10 @@ unsigned char t0;
 
 #define TMS 20;
 
-static void isr(void) interrupt 0 { 
-   /*
-    Notice the use of 'interrupt 0' keyword in the function above.  This
-    is how SDCC knows that this is the interrupt service routine.  We will
-    only be using level '0' for PICs, therefore, you can use this same 
-    function in all your PIC applications.
-    */
 
-    T0IF = 0;               /* Clear timer interrupt flag */     
+static void isr(void) interrupt 0 { 
+
+    T0IF = 0;                 
 	if (Msec >0) Msec--;
 	
 	PORTA ^= 0X80;  // 1khz
@@ -72,7 +67,7 @@ static void isr(void) interrupt 0 {
 		t+=2;
 	}
 
-	if (t>0)
+	if (t>0 ) //
 	{
 		if (wlc!=0)
 		{
@@ -108,13 +103,26 @@ static void isr(void) interrupt 0 {
 	if ((PORTA & 0x04) != 0)   //RA2 (pin1)
 	{
 		Cnt++;
+		//if (Cnt==255) Cnt=1;
 	}
 	else
 	{
 		if (Cnt>0) {
 			//
-			Mode = !Mode;
-			Cnt=0;
+			Mode = 0; PORTB=0x01; 
+			
+			if (Cnt>5) { Mode=1; PORTB=0x03; }
+			if (Cnt>15) { Mode=2; PORTB=0x07; }
+			if (Cnt>25) { Mode=3; PORTB=0x0f; }
+
+			//sort delay to show lights
+
+			for (t0=0; t0< 30;t0++) 
+				for (Cnt=0; Cnt < 250; Cnt++) 	
+					PORTA ^= 0X80;  // 2khz
+
+			PORTB=0;
+			Cnt=0;			
 		}
 		
 	}
@@ -160,12 +168,9 @@ void init(void) {
     INTCON = 0;             /* clear interrupt flag bits */
     GIE = 1;                /* global interrupt enable */
     T0IE = 1;               /* TMR0 overflow interrupt enable */
-      
-        
     TMR0 = 0;               /* clear the value in TMR0 */
-	
 	t=0;
-
+	Mode=0;
 }
 
 
@@ -191,7 +196,25 @@ void play_tone()
 	t=1;
 }
 
-#define CYLON_SCAN_DELAY 20
+#define CYLON_SCAN_DELAY 25
+
+
+/*
+
+  A1 A0 A7 A6 V+ B7 B6 B5 B4 
+  |  |  |  |  |  |  |  |  |
+ ---------------------------
+ |      PIC 16F648         |
+ -o-------------------------
+  |  |  |  |  |  |  |  |  |
+  A2 A3 A4 A5 G  B0 B1 B2 B3
+ 
+ 
+ B0-B7 A0-A1 Are connected to LED
+ A2 control inut
+ A6/7 Sound output
+ 
+*/ 
 
 void start() {
 
@@ -248,8 +271,10 @@ void start() {
 			// single direction scan
 
 			for(i = 0; i < sizeof(cylon_bits_a); i++) {
-				PORTA = cylon_bits_a[i];
-				PORTB = cylon_bits_b[i];
+				PORTA &= mask_a;
+				PORTA |= cylon_bits_a[i];
+				PORTB &= mask_b;
+				PORTB |= cylon_bits_b[i];
 				delay(CYLON_SCAN_DELAY);
 			}
 
@@ -259,8 +284,10 @@ void start() {
 			// other direction scan
 
 			for(i = sizeof(cylon_bits_a); i > 0; i--) {
-				PORTA = cylon_bits_a[i];
-				PORTB = cylon_bits_b[i];
+				PORTA &= mask_a;
+				PORTA |= cylon_bits_a[i];
+				PORTB &= mask_b;
+				PORTB |= cylon_bits_b[i];
 				delay(CYLON_SCAN_DELAY);
 			}
 		}
@@ -327,10 +354,26 @@ unsigned char sound_bytes_1[] = { 0xCC, 0xCC, 0xCC};
 
 
 void main(void) {
- 
+	int i=0; 
 	init();
 	
 	Mode=0;
+	Cnt=0;
+	
+	for (i=0; i<30; i++)
+	{
+		delay(50);
+		if (i%2==0) {
+			PORTA = 1;
+			PORTB = 206;  //00 10000100
+		}
+		else {
+			PORTA = 1;
+			PORTB = 74;  //00 10000100
+		}
+	}
+	Mode=0;
+	Cnt=0;
  
 	start();
 

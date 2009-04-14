@@ -1,0 +1,23 @@
+10 print "Port test"
+20 put port:f:8=1
+25 print "Mode 0"
+28 let a=$kbd
+30 put port:f:0=1
+40 wait 2
+50 put port:f:0=0
+60 print "Mode 1"
+70 let a=$kbd
+80 put port:f:0=1
+90 wait 5
+100 put port:f:0=0
+110 print "Mode 2"
+120 let a=$kbd
+130 put port:f:0=1
+140 wait 10
+150 put port:f:0=0
+160 print "Mode 3"
+170 let a=$kbd
+190 put port:f:0=1
+200 wait 20
+210 put port:f:0=0
+220 goto 25
