@@ -28,46 +28,63 @@ config at 0x2007 __CONFIG =
 
 ///////////////////////////////////////////////////////////////////////////////
 // init() - initialize everything
-///////////////////////////////////////////////////////////////////////////////
-
+///////////////////////////////////////////////////////////////////////////////
 static unsigned char Msec;
 static unsigned char Cnt;
 static unsigned char Mode;
 
-unsigned char s_mask;
-char *s_bytes, *s_bytes_;
-unsigned char c_byte;
+static unsigned char t;
+static unsigned char t0;
+	
+static unsigned char i; // array iterator
 
-unsigned char  wlc;  //wave length in 0.5us i.e. 1Khz = 0.5us on, 0.5us off -> L=1ms => 1Khz
-unsigned char  wln;  //wave length in 0.5us i.e. 1Khz = 0.5us on, 0.5us off -> L=1ms => 1Khz
+static unsigned char  wlc;  //wave length in 0.5us i.e. 1Khz = 0.5us on, 0.5us off -> L=1ms => 1Khz
+static unsigned char  wln;  //wave length in 0.5us i.e. 1Khz = 0.5us on, 0.5us off -> L=1ms => 1Khz
 
 
 // [t/10ms, f]
-unsigned char tune[] = {
+static unsigned char tune[] = {
 	100,2,100,0,100,3,100,0,0
 	};
 	
-unsigned char t;
-unsigned char t0;
-
-#define TMS 20;
-
 
 static void isr(void) interrupt 0 { 
+    
+    /*
+    Notice the use of 'interrupt 0' keyword in the function above.  This
+    is how SDCC knows that this is the interrupt service routine.  We will
+    only be using level '0' for PICs, therefore, you can use this same 
+    function in all your PIC applications.
+    */
 
-    T0IF = 0;                 
+    T0IF = 0;               /* Clear timer interrupt flag */     
+	
+	PORTA ^= 0x80;  		//Flip Bit very -0.5ms = 1kHz
+	
 	if (Msec >0) Msec--;
 	
-	PORTA ^= 0X80;  // 1khz
-	
-	
-	
+	if ((PORTA & 0x04) != 0)   //RA2 (pin1)
+	{
+		Cnt++;
+	}
+	else
+	{
+		if (Cnt>0) {
+			//
+			Mode = Mode +1;
+			if (Mode>3) Mode=0;
+			Cnt=0;
+		}
+		
+	}
+		
 	if(t==1)
 	{
 		wln=tune[t-1];
 		wlc=tune[t];
 		t+=2;
 	}
+	
 	
 	if (t>0 ) //
 	{
@@ -86,8 +103,14 @@ static void isr(void) interrupt 0 {
 					{
 						wln=tune[t-1];	
 						if (wln != 0) 
+						{
 							wlc=tune[t];
-						t+=2;
+							t+=2;
+						}
+						else
+						{
+							t=0; //finished
+						}
 					}
 					else
 						wlc=tune[t-2];
@@ -101,34 +124,6 @@ static void isr(void) interrupt 0 {
 			}
 		}
 	}
-	
-	if ((PORTA & 0x04) != 0)   //RA2 (pin1)
-	{
-		Cnt++;
-		//if (Cnt==255) Cnt=1;
-	}
-	else
-	{
-		if (Cnt>0) {
-			//
-			Mode = 0; PORTB=0x01; 
-			
-			if (Cnt>5) { Mode=1; PORTB=0x03; }
-			if (Cnt>15) { Mode=2; PORTB=0x07; }
-			if (Cnt>25) { Mode=3; PORTB=0x0f; }
-
-			//sort delay to show lights
-
-			for (t0=0; t0< 30;t0++) 
-				for (Cnt=0; Cnt < 250; Cnt++) 	
-					PORTA ^= 0X80;  // 2khz
-
-			PORTB=0;
-			Cnt=0;			
-		}
-		
-	}
-	
 	
 }
 
@@ -171,9 +166,10 @@ void init(void) {
     INTCON = 0;             /* clear interrupt flag bits */
     GIE = 1;                /* global interrupt enable */
     T0IE = 1;               /* TMR0 overflow interrupt enable */
+      
+        
     TMR0 = 0;               /* clear the value in TMR0 */
-	t=0;
-	Mode=0;
+ 
 }
 
 
@@ -191,181 +187,30 @@ void delay(unsigned char ms)
 	
 	while (Msec) 
 	{
-	}  
+		PORTA ^= 0x40;  		//Flip Bit
+	}  		//Flip Bit
 }
 
-void play_tone()
-{
-	t=0;
-}
 
-#define CYLON_SCAN_DELAY 25
+#define CYLON_SCAN_DELAY 20
+#define mask_a (unsigned char)0xFC
+#define mask_b (unsigned char)0x00
 
-
-/*
-
-  A1 A0 A7 A6 V+ B7 B6 B5 B4 
-  |  |  |  |  |  |  |  |  |
- ---------------------------
- |      PIC 16F648         |
- -o-------------------------
-  |  |  |  |  |  |  |  |  |
-  A2 A3 A4 A5 G  B0 B1 B2 B3
- 
- 
- B0-B7 A0-A1 Are connected to LED
- A2 control inut
- A6/7 Sound output
- 
-*/ 
-
-#define MASK_A (unsigned char)0xFC
-#define MASK_B (unsigned char)0x00
-
-
-
-void start() {
-
-	unsigned char i; // array iterator
 /* 10 bits */
-unsigned char cylon_bits_a[] = { 2,3,  1,  0,  0, 0, 0,0,0,0 };
-unsigned char cylon_bits_b[] = { 0,0,128,192,112,56,12,6,3,1 };
+const unsigned char cylon_bits_a[] = { 2,3,  1,  0,  0, 0, 0,0,0,0 };
+const unsigned char cylon_bits_b[] = { 0,0,128,192,112,56,12,6,3,1 };
 
-unsigned char mask_a = 0xfc;
-unsigned char mask_b = 0x00;
+void cylon() {
 
-	while(1) {
-	
-		play_tone();
 
 	
-		while (Mode==0) // wait until mode set
-		{
-			PORTA = 0;
-			PORTB = 132;  //00 10000100
-			delay(CYLON_SCAN_DELAY);		
-		}
-		
-		play_tone();
+//	const unsigned char mask_a = 0xfc;
+//const unsigned char mask_b = 0x00;
+
+    t=0;
 	
-
-		if(Mode == 1) {
-
-			// traditional (back & forth) cylon scanner
-
-			for(i = 1; i < sizeof(cylon_bits_a); i++) {
-			
-			
-				PORTA &= MASK_A;
-				PORTA |= cylon_bits_a[i];
-				PORTB &= MASK_B;
-				PORTB |= cylon_bits_b[i];
-				delay(CYLON_SCAN_DELAY);
-			}
-
-			for(i = sizeof(cylon_bits_a) - 2; i > 1; i--) {
-				PORTA &= MASK_A;
-				PORTA |= cylon_bits_a[i];
-				PORTB &= MASK_B;
-				PORTB |= cylon_bits_b[i];
-				delay(CYLON_SCAN_DELAY);
-			}
-
-		} else if(Mode == 2) {
-
-			// single direction scan
-
-			for(i = 0; i < sizeof(cylon_bits_a); i++) {
-				PORTA &= MASK_A;
-				PORTA |= cylon_bits_a[i];
-				PORTB &= MASK_B;
-				PORTB |= cylon_bits_b[i];
-				delay(CYLON_SCAN_DELAY);
-			}
-
-
-		} else if(Mode == 3) {
-
-			// other direction scan
-
-			for(i = sizeof(cylon_bits_a); i > 0; i--) {
-				PORTA &= MASK_A;
-				PORTA |= cylon_bits_a[i];
-				PORTB &= MASK_B;
-				PORTB |= cylon_bits_b[i];
-				delay(CYLON_SCAN_DELAY);
-			}
-		}
-	}
-}
-
-
-
-//__code __at (0x300) unsigned char sound_bytes_0[] = { 0xAA, 0xAA, 0xAA};
-//__code __at (0x310) unsigned char sound_bytes_1[] = { 0xCC, 0xCC, 0xCC};
-
-/*
-
-void play_sound(unsigned char sound_id, int ptime) {
-
-unsigned char sound_bytes_0[] = { 0xAA, 0xAA, 0xAA};
-unsigned char sound_bytes_1[] = { 0xCC, 0xCC, 0xCC};
-
-		
-	// play sound from array
-	int sz;
-	char *sb;
-	
-	switch(sound_id) {
-	case 0:
-		sz = sizeof(sound_bytes_0);
-		sb = &sound_bytes_0[0];
-		break;
-	case 1:
-		sz = sizeof(sound_bytes_1);
-		sb = &sound_bytes_1[0];
-		break;
-	}
-	
-	s_mask=1;
-		
-	while (ptime-- > 0)
-	{
-		if (s_mask==0)
-		{
-			s_mask=1;
-			s_bytes++;
-			if ((s_bytes-sb) >= sz)
-				s_bytes=sb;
-		}
-		if ((s_mask & *s_bytes) != 0)
-		{
-			PORTA |= 0x80;  		//Bit 7 On
-			PORTA &= 0xBF;  		//Bit 6 Off
-		}
-		else
-		{
-			PORTA &= 0x7F;  		//Bit 7 Off
-			PORTA |= 0x40;  		//Bit 6 On
-		}
-
-		s_mask <<= 1;	
-		
-		delay(1);
-	}
-}
-
-*/
-
-
-void main(void) {
-	int i=0; 
-	init();
-	
-	Mode=0;
-	Cnt=0;
-	
-	for (i=0; i<30; i++)
+	 
+ 	for (i=0; i<30; i++)
 	{
 		delay(50);
 		if (i%2==0) {
@@ -377,9 +222,78 @@ void main(void) {
 			PORTB = 74;  //00 10000100
 		}
 	}
-	Mode=0;
-	Cnt=0;
- 
-	start();
+	
 
+
+	while(1) {
+	
+		
+		t=0;
+	
+		while (Mode==0) // wait until mode set
+		{
+			PORTA = 0;
+			PORTB = 132;  //00 10000100
+			delay(CYLON_SCAN_DELAY);		
+		}	
+		
+		t=1;
+	
+
+		if(Mode==1) {
+
+			// traditional (back & forth) cylon scanner
+
+			for(i = 1; i < sizeof(cylon_bits_a); i++) {
+			
+			
+				PORTA &= mask_a;
+				PORTA |= cylon_bits_a[i];
+				PORTB &= mask_b;
+				PORTB |= cylon_bits_b[i];
+				delay(CYLON_SCAN_DELAY);
+			}
+
+			for(i = sizeof(cylon_bits_a) - 2; i > 1; i--) {
+				PORTA &= mask_a;
+				PORTA |= cylon_bits_a[i];
+				PORTB &= mask_b;
+				PORTB |= cylon_bits_b[i];
+				delay(CYLON_SCAN_DELAY);
+			}
+
+		} else if(Mode==2) {
+
+			// single direction scan
+
+			for(i = 0; i < sizeof(cylon_bits_a); i++) {
+				PORTA = cylon_bits_a[i];
+				PORTB = cylon_bits_b[i];
+				delay(CYLON_SCAN_DELAY);
+			}
+
+
+		} else if(Mode==3) {
+
+			// other direction scan
+
+			for(i = sizeof(cylon_bits_a); i > 0; i--) {
+				PORTA = cylon_bits_a[i];
+				PORTB = cylon_bits_b[i];
+				delay(CYLON_SCAN_DELAY);
+			}
+		}
+	}
+}
+
+ 
+void main(void) {
+ 
+ init();
+
+ Mode=0;
+
+ 
+ cylon();
+ 
 }
