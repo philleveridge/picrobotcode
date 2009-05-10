@@ -31,12 +31,14 @@ config at 0x2007 __CONFIG =
 ///////////////////////////////////////////////////////////////////////////////
 
 static unsigned char Msec;
-static unsigned char Cnt;
+static unsigned int  Cnt;
 static unsigned char Mode;
+
 
 unsigned char s_mask;
 char *s_bytes, *s_bytes_;
 unsigned char c_byte;
+unsigned char t_byte;
 
 unsigned char  wlc;  //wave length in 0.5us i.e. 1Khz = 0.5us on, 0.5us off -> L=1ms => 1Khz
 unsigned char  wln;  //wave length in 0.5us i.e. 1Khz = 0.5us on, 0.5us off -> L=1ms => 1Khz
@@ -55,11 +57,23 @@ unsigned char t0;
 
 static void isr(void) interrupt 0 { 
 
-    T0IF = 0;                 
-	if (Msec >0) Msec--;
+    T0IF = 0; 
+    Cnt++;
 	
-	PORTA ^= 0X80;  // 1khz
+	if (Cnt%2==2)
+	{
+		if (Msec >0) Msec--;
+	}
 	
+	if (Cnt%8==8)  // every 4ms = 250 B/s sample input
+	{
+		c_byte<<2;
+		c_byte |= ((PORTA & 0x04)>>2);
+		
+		if (cbyte==0xAA) // start received
+		{
+		}
+	}
 	
 	
 	if(t==1)
@@ -78,8 +92,7 @@ static void isr(void) interrupt 0 {
 				wlc--;
 				if (wlc==0) 
 				{
-					// flip bit A6;
-					PORTA ^= 0X40; 
+					PORTA ^= 0X40; 		// flip bit A6;
 					
 					wln--;
 					if (wln==0)
@@ -100,33 +113,6 @@ static void isr(void) interrupt 0 {
 				wln--;
 			}
 		}
-	}
-	
-	if ((PORTA & 0x04) != 0)   //RA2 (pin1)
-	{
-		Cnt++;
-		//if (Cnt==255) Cnt=1;
-	}
-	else
-	{
-		if (Cnt>0) {
-			//
-			Mode = 0; PORTB=0x01; 
-			
-			if (Cnt>5) { Mode=1; PORTB=0x03; }
-			if (Cnt>15) { Mode=2; PORTB=0x07; }
-			if (Cnt>25) { Mode=3; PORTB=0x0f; }
-
-			//sort delay to show lights
-
-			for (t0=0; t0< 30;t0++) 
-				for (Cnt=0; Cnt < 250; Cnt++) 	
-					PORTA ^= 0X80;  // 2khz
-
-			PORTB=0;
-			Cnt=0;			
-		}
-		
 	}
 	
 	
@@ -174,6 +160,8 @@ void init(void) {
     TMR0 = 0;               /* clear the value in TMR0 */
 	t=0;
 	Mode=0;
+	Cnt=0;
+	c_byte=0;
 }
 
 
@@ -187,7 +175,7 @@ void init(void) {
 
 void delay(unsigned char ms)
 {
-	Msec=ms<<2;
+	Msec=ms;
 	
 	while (Msec) 
 	{
@@ -196,11 +184,17 @@ void delay(unsigned char ms)
 
 void play_tone()
 {
-	t=0;
+	t=1;
 }
 
-#define CYLON_SCAN_DELAY 25
+void readMode()
+{
 
+
+}
+
+
+#define CYLON_SCAN_DELAY 25
 
 /*
 
